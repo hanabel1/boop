@@ -15,7 +15,6 @@ import (
 )
 
 func parseGitHubPRURL(url string) (owner, repo string, number int) {
-	// https://github.com/{owner}/{repo}/pull/{number}
 	parts := strings.Split(strings.TrimPrefix(url, "https://github.com/"), "/")
 	if len(parts) >= 4 && parts[2] == "pull" {
 		number, _ = strconv.Atoi(parts[3])
@@ -32,6 +31,98 @@ type pr struct {
 	commits []string
 }
 
+type theme struct {
+	primaryBorder string
+	dimBorder     string
+	selectedRow   string
+	dimText       string
+	headerText    string
+	accent        string
+	bullet        string
+	cursor        string
+	sparkle       string
+	flower        string
+	loading       string
+	empty         string
+	banner        string
+}
+
+var themes = map[string]theme{
+	"pastel": {
+		primaryBorder: "211",
+		dimBorder:     "183",
+		selectedRow:   "219",
+		dimText:       "182",
+		headerText:    "213",
+		accent:        "117",
+		bullet:        "🌸",
+		cursor:        "🐾",
+		sparkle:       "✨",
+		flower:        "🌷",
+		loading:       "       /\\_/\\\n      ( o.o )\n       > ^ <\n      /|   |\\\n     (_|   |_)\n\n    🐱 fetching your PRs~",
+		empty:         "🌙 nothing open — go take a nap!",
+		banner:        "·˚ ♡ ·˚ ✧ ·˚ ♡ ·˚ ✧",
+	},
+	"y2k": {
+		primaryBorder: "198",
+		dimBorder:     "154",
+		selectedRow:   "201",
+		dimText:       "120",
+		headerText:    "198",
+		accent:        "51",
+		bullet:        "💎",
+		cursor:        "⭐",
+		sparkle:       "💫",
+		flower:        "🦋",
+		loading:       "    ╔══════════════╗\n    ║  ★ B O O P ★ ║\n    ║   ·411·1010·  ║\n    ╚══════════════╝\n\n     💿 loading ur PRs...",
+		empty:         "🛸 inbox zero bb!",
+		banner:        "★·.·´¯`·.·★ boop ★·.·´¯`·.·★",
+	},
+	"cottagecore": {
+		primaryBorder: "181",
+		dimBorder:     "107",
+		selectedRow:   "223",
+		dimText:       "144",
+		headerText:    "181",
+		accent:        "150",
+		bullet:        "🌿",
+		cursor:        "🍄",
+		sparkle:       "🌻",
+		flower:        "🌼",
+		loading:       "                    .-'~~~-.\n                   .'o  oOOOo`.\n                  :~~~-.oOo   o`.\n                   `. \\ ~-.  oOOo.\n                     `.; / ~.  OO:\n                     .'  ;-- `.o.'\n                    ,'  ; ~~--'~\n                    ;  ;\n  _______\\|/__________\\\\;_\\\\//___\\|/________\n\n         🐝 gathering your PRs\n            from the garden...",
+		empty:         "🌾 the meadow is quiet — no open PRs",
+		banner:        "~* 🌻 ~ 🌸 ~ 🌼 ~ 🌿 *~",
+	},
+}
+
+func loadTheme() theme {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return themes["pastel"]
+	}
+	data, err := os.ReadFile(home + "/.boop")
+	if err != nil {
+		return themes["pastel"]
+	}
+	line := strings.TrimSpace(string(data))
+	if strings.HasPrefix(line, "theme=") {
+		name := strings.TrimPrefix(line, "theme=")
+		if t, ok := themes[name]; ok {
+			return t
+		}
+	}
+	return themes["pastel"]
+}
+
+func themeName(t theme) string {
+	for name, th := range themes {
+		if th == t {
+			return name
+		}
+	}
+	return "pastel"
+}
+
 type model struct {
 	prs      []pr
 	username string
@@ -40,6 +131,7 @@ type model struct {
 	width    int
 	height   int
 	selected int
+	theme    theme
 }
 
 type prsLoadedMsg struct {
@@ -95,8 +187,8 @@ func fetchPRs() tea.Msg {
 	return prsLoadedMsg{prs: prs, username: user.GetLogin()}
 }
 
-func initialModel() model {
-	return model{loading: true}
+func initialModel(t theme) model {
+	return model{loading: true, theme: t}
 }
 
 func (m model) Init() tea.Cmd {
@@ -138,16 +230,49 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m model) View() string {
+	t := m.theme
+	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.dimText))
+
 	if m.loading {
-		return "\n  Loading PRs..."
+		loadBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color(t.primaryBorder)).
+			Padding(2, 4).
+			Render(t.loading)
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, loadBox)
 	}
 	if m.err != nil {
-		return fmt.Sprintf("\n  Error: %v\n", m.err)
+		errBox := lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("196")).
+			Padding(1, 3).
+			Render(fmt.Sprintf("😿 oh no: %v", m.err))
+		return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, errBox)
 	}
 
+	// Header
+	bannerLine := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(t.dimBorder)).
+		Render(t.banner)
+
+	boopTitle := lipgloss.NewStyle().
+		Bold(true).
+		Foreground(lipgloss.Color(t.primaryBorder)).
+		Render(fmt.Sprintf("%s boop", t.cursor))
+
+	subtitle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(t.headerText)).
+		Render(fmt.Sprintf("%s @%s · %d open PRs", t.sparkle, m.username, len(m.prs)))
+
+	separator := dimStyle.
+		Render(strings.Repeat("─", m.width))
+
+	header := bannerLine + "\n" + boopTitle + "\n" + subtitle + "\n" + separator
+
+	// Layout dimensions
 	leftWidth := m.width/2 - 2
 	rightWidth := m.width - leftWidth - 3
-	contentHeight := m.height - 2
+	contentHeight := m.height - 5
 
 	if leftWidth < 10 {
 		leftWidth = 40
@@ -163,64 +288,72 @@ func (m model) View() string {
 		Width(leftWidth).
 		Height(contentHeight).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("62")).
+		BorderForeground(lipgloss.Color(t.primaryBorder)).
 		Padding(1)
 
 	rightStyle := lipgloss.NewStyle().
 		Width(rightWidth).
 		Height(contentHeight).
 		Border(lipgloss.RoundedBorder()).
-		BorderForeground(lipgloss.Color("241")).
+		BorderForeground(lipgloss.Color(t.dimBorder)).
 		Padding(1)
 
-	selectedStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	dimStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
+	selectedStyle := lipgloss.NewStyle().
+		Foreground(lipgloss.Color(t.selectedRow)).
+		Bold(true)
+	accentStyle := lipgloss.NewStyle().Foreground(lipgloss.Color(t.accent))
 
+	// Left panel — PR list
 	var leftContent strings.Builder
-	leftContent.WriteString(fmt.Sprintf("@%s — %d open\n\n", m.username, len(m.prs)))
 	for i, p := range m.prs {
-		prefix := "  "
-		titleLine := p.title
-		repoLine := dimStyle.Render(p.repo)
 		if i == m.selected {
-			prefix = "> "
-			titleLine = selectedStyle.Render(p.title)
-			repoLine = selectedStyle.Render(p.repo)
+			leftContent.WriteString(selectedStyle.Render(fmt.Sprintf("%s %s", t.cursor, p.title)) + "\n")
+			leftContent.WriteString("    " + dimStyle.Render(p.repo) + "\n\n")
+		} else {
+			leftContent.WriteString(fmt.Sprintf("  %s %s\n", t.bullet, p.title))
+			leftContent.WriteString("    " + dimStyle.Render(p.repo) + "\n\n")
 		}
-		leftContent.WriteString(fmt.Sprintf("%s%s\n    %s\n\n", prefix, titleLine, repoLine))
 	}
 
+	// Right panel — PR details
 	var rightContent string
 	if len(m.prs) > 0 {
 		sp := m.prs[m.selected]
 		var detail strings.Builder
-		detail.WriteString(selectedStyle.Render(sp.title) + "\n\n")
-		detail.WriteString(dimStyle.Render("repo  ") + sp.repo + "\n")
-		detail.WriteString(dimStyle.Render("url   ") + sp.url + "\n")
+
+		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(t.headerText))
+		detail.WriteString(titleStyle.Render(sp.title) + "\n\n")
+
+		detail.WriteString(fmt.Sprintf("%s  %s\n", t.flower, sp.repo))
+		detail.WriteString(fmt.Sprintf("%s  %s\n", t.sparkle, accentStyle.Render(sp.url)))
+
+		detail.WriteString("\n" + dimStyle.Render(strings.Repeat("~ ", (rightWidth-4)/2)) + "\n")
 
 		if sp.body != "" {
-			detail.WriteString("\n" + dimStyle.Render("description") + "\n")
-			body := sp.body
-			if len(body) > 300 {
-				body = body[:300] + "..."
+			bodyPreview := sp.body
+			if len(bodyPreview) > 200 {
+				bodyPreview = bodyPreview[:200] + "..."
 			}
-			detail.WriteString(body + "\n")
+			detail.WriteString("\n" + dimStyle.Render(bodyPreview) + "\n")
 		}
 
 		if len(sp.commits) > 0 {
-			detail.WriteString("\n" + dimStyle.Render("recent commits") + "\n")
-			for _, msg := range sp.commits {
-				firstLine := strings.SplitN(msg, "\n", 2)[0]
-				if len(firstLine) > 60 {
-					firstLine = firstLine[:57] + "..."
+			detail.WriteString(fmt.Sprintf("\n%s recent commits\n", t.bullet))
+			for _, c := range sp.commits {
+				msg := c
+				if idx := strings.Index(msg, "\n"); idx != -1 {
+					msg = msg[:idx]
 				}
-				detail.WriteString("  • " + firstLine + "\n")
+				if len(msg) > 50 {
+					msg = msg[:50] + "..."
+				}
+				detail.WriteString(dimStyle.Render(fmt.Sprintf("  · %s\n", msg)))
 			}
 		}
 
 		rightContent = detail.String()
 	} else {
-		rightContent = "no open PRs"
+		rightContent = t.empty
 	}
 
 	left := leftStyle.Render(leftContent.String())
@@ -228,11 +361,16 @@ func (m model) View() string {
 
 	layout := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	return layout + "\n  q to quit"
+	themeHint := dimStyle.Render(fmt.Sprintf("%s theme: %s", t.sparkle, themeName(m.theme)))
+	navHint := dimStyle.Render("j/k to navigate · enter to open · q to quit")
+	full := header + "\n" + layout + "\n  " + navHint + "  ·  " + themeHint
+
+	return lipgloss.NewStyle().Height(m.height).Render(full)
 }
 
 func main() {
-	p := tea.NewProgram(initialModel(), tea.WithAltScreen())
+	t := loadTheme()
+	p := tea.NewProgram(initialModel(t), tea.WithAltScreen())
 	if _, err := p.Run(); err != nil {
 		log.Fatal(err)
 	}
