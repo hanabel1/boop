@@ -251,37 +251,36 @@ func (m model) View() string {
 	}
 
 	// Header
-	bannerLine := lipgloss.NewStyle().
-		Foreground(lipgloss.Color(t.dimBorder)).
-		Render(t.banner)
-
 	boopTitle := lipgloss.NewStyle().
 		Bold(true).
 		Foreground(lipgloss.Color(t.primaryBorder)).
-		Render(fmt.Sprintf("%s boop", t.cursor))
+		Render("🐾 boop")
 
 	subtitle := lipgloss.NewStyle().
 		Foreground(lipgloss.Color(t.headerText)).
-		Render(fmt.Sprintf("%s @%s · %d open PRs", t.sparkle, m.username, len(m.prs)))
+		Render(fmt.Sprintf("✨ @%s · %d open PRs", m.username, len(m.prs)))
 
 	separator := dimStyle.
-		Render(strings.Repeat("─", m.width))
+		Render(strings.Repeat("─", max(m.width-2, 1)))
 
-	header := bannerLine + "\n" + boopTitle + "\n" + subtitle + "\n" + separator
+	header := boopTitle + "\n" + subtitle + "\n" + separator
 
 	// Layout dimensions
-	leftWidth := m.width/2 - 2
-	rightWidth := m.width - leftWidth - 3
-	contentHeight := m.height - 5
+	// Each panel has border (2 cols) + padding (2 cols) = 4 cols of chrome
+	panelChrome := 4
+	availableWidth := m.width - panelChrome*2
+	leftWidth := availableWidth / 2
+	rightWidth := availableWidth - leftWidth
+	contentHeight := m.height - 6
 
 	if leftWidth < 10 {
-		leftWidth = 40
+		leftWidth = 10
 	}
 	if rightWidth < 10 {
-		rightWidth = 40
+		rightWidth = 10
 	}
 	if contentHeight < 5 {
-		contentHeight = 20
+		contentHeight = 5
 	}
 
 	leftStyle := lipgloss.NewStyle().
@@ -307,11 +306,11 @@ func (m model) View() string {
 	var leftContent strings.Builder
 	for i, p := range m.prs {
 		if i == m.selected {
-			leftContent.WriteString(selectedStyle.Render(fmt.Sprintf("%s %s", t.cursor, p.title)) + "\n")
-			leftContent.WriteString("    " + dimStyle.Render(p.repo) + "\n\n")
+			leftContent.WriteString(selectedStyle.Render(fmt.Sprintf("> %s", p.title)) + "\n")
+			leftContent.WriteString("   " + dimStyle.Render(p.repo) + "\n\n")
 		} else {
-			leftContent.WriteString(fmt.Sprintf("  %s %s\n", t.bullet, p.title))
-			leftContent.WriteString("    " + dimStyle.Render(p.repo) + "\n\n")
+			leftContent.WriteString(fmt.Sprintf("  %d. %s\n", i+1, p.title))
+			leftContent.WriteString("     " + dimStyle.Render(p.repo) + "\n\n")
 		}
 	}
 
@@ -321,35 +320,14 @@ func (m model) View() string {
 		sp := m.prs[m.selected]
 		var detail strings.Builder
 
-		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(t.headerText))
+		titleStyle := lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color(t.selectedRow))
 		detail.WriteString(titleStyle.Render(sp.title) + "\n\n")
 
-		detail.WriteString(fmt.Sprintf("%s  %s\n", t.flower, sp.repo))
-		detail.WriteString(fmt.Sprintf("%s  %s\n", t.sparkle, accentStyle.Render(sp.url)))
+		detail.WriteString(dimStyle.Render(sp.repo) + "\n")
+		detail.WriteString(accentStyle.Render(sp.url) + "\n\n")
 
-		detail.WriteString("\n" + dimStyle.Render(strings.Repeat("~ ", (rightWidth-4)/2)) + "\n")
-
-		if sp.body != "" {
-			bodyPreview := sp.body
-			if len(bodyPreview) > 200 {
-				bodyPreview = bodyPreview[:200] + "..."
-			}
-			detail.WriteString("\n" + dimStyle.Render(bodyPreview) + "\n")
-		}
-
-		if len(sp.commits) > 0 {
-			detail.WriteString(fmt.Sprintf("\n%s recent commits\n", t.bullet))
-			for _, c := range sp.commits {
-				msg := c
-				if idx := strings.Index(msg, "\n"); idx != -1 {
-					msg = msg[:idx]
-				}
-				if len(msg) > 50 {
-					msg = msg[:50] + "..."
-				}
-				detail.WriteString(dimStyle.Render(fmt.Sprintf("  · %s\n", msg)))
-			}
-		}
+		detail.WriteString(dimStyle.Render(strings.Repeat("─", max(rightWidth-2, 1))) + "\n")
+		detail.WriteString(dimStyle.Render(fmt.Sprintf("theme: %s ✨", themeName(m.theme))))
 
 		rightContent = detail.String()
 	} else {
@@ -361,9 +339,8 @@ func (m model) View() string {
 
 	layout := lipgloss.JoinHorizontal(lipgloss.Top, left, right)
 
-	themeHint := dimStyle.Render(fmt.Sprintf("%s theme: %s", t.sparkle, themeName(m.theme)))
 	navHint := dimStyle.Render("j/k to navigate · enter to open · q to quit")
-	full := header + "\n" + layout + "\n  " + navHint + "  ·  " + themeHint
+	full := header + "\n" + layout + "\n  " + navHint
 
 	return lipgloss.NewStyle().Height(m.height).Render(full)
 }
